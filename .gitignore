@@ -1,0 +1,27 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Packaging
+*.egg-info/
+
+# Next.js
+.next/
+.next-dev.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dataset
+transcripts/

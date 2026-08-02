@@ -1,0 +1,58 @@
+"""Implements the QA `Skill`: retrieval call -> grounded generation ->
+citation assembly (PRD §6.3)."""
+
+from typing import ClassVar
+
+from app.domains.knowledge.retrieval_service import RetrievalService
+from app.domains.providers.gateway import ModelGateway
+from app.domains.skills.qa.citation_builder import CitationBuilder
+from app.domains.skills.qa.prompts import QA_SYSTEM_PROMPT, build_qa_prompt
+from app.domains.skills.schemas import SkillContext, SkillResult
+
+_TOP_K = 6
+_NO_GROUNDING_MESSAGE = (
+    "I don't have enough information in the ingested Lenny's Podcast "
+    "transcripts to answer that confidently. Try rephrasing, or ask about "
+    "a topic covered in an episode that's been ingested."
+)
+
+
+class QASkill:
+    """Satisfies the `skills.base.Skill` protocol structurally (no inheritance
+    required — see base.py docstring)."""
+
+    name: ClassVar[str] = "qa"
+
+    def __init__(
+        self,
+        retrieval_service: RetrievalService,
+        model_gateway: ModelGateway,
+        citation_builder: CitationBuilder,
+    ) -> None:
+        self._retrieval_service = retrieval_service
+        self._model_gateway = model_gateway
+        self._citation_builder = citation_builder
+
+    async def handle(self, context: SkillContext) -> SkillResult:
+        retrieved_chunks = await self._retrieval_service.search(query_text=context.message, top_k=_TOP_K)
+
+        if not retrieved_chunks:
+            # Explicit "no grounding" outcome, not an error (PRD §6.3
+            # acceptance criteria: say so rather than fabricate an answer).
+            # No citations, since nothing was retrieved to cite.
+            return SkillResult(skill="qa", content_markdown=_NO_GROUNDING_MESSAGE, citations=[])
+
+        prompt = build_qa_prompt(
+            question=context.message,
+            retrieved_chunks=[chunk.content for chunk in retrieved_chunks],
+        )
+        answer = await self._model_gateway.generate(prompt=prompt, system=QA_SYSTEM_PROMPT)
+
+        # Citations are built from the retrieved chunks themselves, never
+        # parsed out of the model's free-text answer (DOMAIN_MODEL.md §4.8
+        # invariant) — every retrieved chunk that was actually shown to the
+        # model gets a citation, regardless of which [N] markers the model
+        # chose to reference in its answer text.
+        citations = self._citation_builder.build(retrieved_chunks=retrieved_chunks)
+
+        return SkillResult(skill="qa", content_markdown=answer, citations=citations)

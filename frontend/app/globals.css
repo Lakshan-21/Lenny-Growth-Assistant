@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Design tokens — warm, editorial palette (cream + terracotta), evoking
+ * Claude's product chrome without reproducing its literal brand colors.
+ * Two type roles: `--font-sans` (Inter) for all UI chrome, `--font-serif`
+ * (Source Serif 4) reserved for quoted transcript excerpts in the
+ * citation panel — the one place this app quotes source material
+ * verbatim, so it gets a distinct "reading" typographic treatment
+ * instead of blending into the interface.
+ */
+@layer base {
+  :root {
+    --background: 40 38% 95%;
+    --background-sidebar: 38 28% 91%;
+    --foreground: 30 12% 14%;
+    --card: 40 40% 98%;
+    --muted: 38 20% 88%;
+    --muted-foreground: 30 8% 42%;
+    --border: 36 20% 85%;
+    --accent: 15 62% 46%;
+    --accent-foreground: 40 40% 98%;
+    --accent-soft: 15 55% 92%;
+    --user-bubble: 36 25% 90%;
+    --destructive: 5 65% 45%;
+    --destructive-foreground: 40 40% 98%;
+    --ring: 15 62% 46%;
+  }
+
+  .dark {
+    --background: 30 9% 11%;
+    --background-sidebar: 30 10% 8%;
+    --foreground: 40 20% 92%;
+    --card: 30 8% 14%;
+    --muted: 30 8% 18%;
+    --muted-foreground: 30 6% 62%;
+    --border: 30 8% 22%;
+    --accent: 15 65% 58%;
+    --accent-foreground: 30 10% 10%;
+    --accent-soft: 15 40% 20%;
+    --user-bubble: 30 8% 20%;
+    --destructive: 5 60% 55%;
+    --destructive-foreground: 30 10% 10%;
+    --ring: 15 65% 58%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  /* Visible keyboard focus everywhere, not just form controls. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Markdown content rendered inside assistant messages — see
+   components/chat/message-bubble.tsx. Scoped to this class rather than
+   global `prose` overrides so it can't leak into the citation panel's
+   serif excerpt styling. */
+@layer components {
+  .markdown-body {
+    @apply text-[0.9375rem] leading-relaxed;
+  }
+  .markdown-body > * + * {
+    @apply mt-3;
+  }
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3 {
+    @apply font-semibold leading-snug;
+  }
+  .markdown-body h1 {
+    @apply text-lg;
+  }
+  .markdown-body h2 {
+    @apply text-base;
+  }
+  .markdown-body ul {
+    @apply list-disc space-y-1 pl-5;
+  }
+  .markdown-body ol {
+    @apply list-decimal space-y-1 pl-5;
+  }
+  .markdown-body a {
+    @apply text-accent underline underline-offset-2;
+  }
+  .markdown-body code {
+    @apply rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.8125rem];
+  }
+  .markdown-body pre {
+    @apply overflow-x-auto rounded-md bg-muted p-3;
+  }
+  .markdown-body pre code {
+    @apply bg-transparent p-0;
+  }
+  .markdown-body blockquote {
+    @apply border-l-2 border-accent/40 pl-3 text-muted-foreground;
+  }
+}
