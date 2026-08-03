@@ -15,6 +15,7 @@
 - [Solution Overview](#solution-overview)
 - [Key Features](#key-features)
 - [Product Walkthrough](#product-walkthrough)
+- [Demo Video](#demo-video)
 - [System Architecture](#system-architecture)
 - [Frontend Architecture](#frontend-architecture)
 - [Backend Architecture](#backend-architecture)
@@ -95,6 +96,19 @@ Every one of these three skills refuses to fabricate: both QA and Research indep
 4. **Switch to Research** — toggle the composer to **Research**, ask a broader topic. The right panel auto-jumps to the **Research** tab once the multi-section brief is synthesized; the chat itself only shows a short executive-summary teaser pointing at the tab (so the full brief isn't duplicated in two places).
 5. **Repurpose with Ship30** — open any artifact (a research brief or a prior Ship30 output) in the **Artifacts** tab, scroll to "Repurpose this with Ship30," optionally edit the framing instruction, and click **LinkedIn post**, **X thread**, or **Article**. The new piece appears both as a new artifact (downloadable as `.md`) and as a new assistant chat turn.
 6. **Return home** — the workspace header logo is a clickable link back to the Hero Landing Page.
+
+## Demo Video
+
+A complete walkthrough of the Lenny Growth Assistant, including:
+
+- Hero landing page
+- Grounded Q&A with citations
+- Research brief generation
+- Sources panel
+- Artifact management
+- Ship30 content generation
+
+🎥 Watch the demo: https://youtu.be/8DlJcviVh0E
 
 ## System Architecture
 
