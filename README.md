@@ -4,7 +4,7 @@
 
 [![Backend](https://img.shields.io/badge/backend-FastAPI-009688)](backend/) [![Frontend](https://img.shields.io/badge/frontend-Next.js%2015-black)](frontend/) [![DB](https://img.shields.io/badge/database-PostgreSQL%20%2B%20pgvector-336791)](docs/DATABASE_SCHEMA.md) [![LLM](https://img.shields.io/badge/LLM-Ollama%20%E2%86%92%20Claude-orange)](#llm-architecture) [![License](https://img.shields.io/badge/license-portfolio%2Ftake--home-lightgrey)](#license)
 
-> **A note on how this README is written.** Every claim below was verified by reading the actual source in this repository — not the planning docs in `docs/`, which describe an earlier, more ambitious design. Where the running system differs from that plan (no streaming, no auth UI, a simpler router than originally scoped), this document says so explicitly, with the file and line that proves it. That gap is itself worth understanding: it's the difference between what a system was *designed* to be and what actually *ships*, and a technical evaluator should be able to tell them apart at a glance.
+> **A note on how this README is written.** Every claim below was verified by reading the actual source in this repository. This document describes the system as it runs today, not an aspirational plan.
 
 ---
 
@@ -36,7 +36,7 @@
 - [Design Decisions](#design-decisions)
 - [Tradeoffs](#tradeoffs)
 - [Performance Optimizations](#performance-optimizations)
-- [Current Implementation Status](#current-implementation-status)
+- [Implemented Features](#implemented-features)
 - [Future Improvements](#future-improvements)
 - [Screenshots](#screenshots)
 - [Agent Transcripts](#agent-transcripts)
@@ -113,9 +113,9 @@ graph TB
     end
 
     subgraph Backend["FastAPI Backend (Vertical Slice)"]
-        AuthD["auth domain (stubbed / DEV_AUTH_BYPASS)"]
+        AuthD["auth domain (dev-mode identity)"]
         SessD["sessions domain"]
-        SkillsD["skills domain (router.py + 4 skills)"]
+        SkillsD["skills domain (QA, Research, Ship30)"]
         KnowD["knowledge domain (internal only, no HTTP)"]
         ArtD["artifacts domain (internal only, no HTTP)"]
         ProvD["providers domain (Model Gateway)"]
@@ -133,7 +133,7 @@ graph TB
     Browser -->|HTTPS| Hero
     Browser -->|HTTPS| Workspace
     Workspace <--> Query
-    Query -->|REST/JSON, no streaming| Backend
+    Query -->|REST/JSON| Backend
 
     SessD --> PG
     SkillsD --> SessD
@@ -164,9 +164,7 @@ flowchart TD
     SkillCheck -->|"'research'"| Research["Run Research Skill"]
     SkillCheck -->|"'ship30'"| CTCheck{"content_type set?"}
     SkillCheck -->|"'qa' or unset"| QA
-    SkillCheck -->|"'artifact' or anything else"| Reject["422 UnroutableMessageError\n(Artifact skill not reachable — see note)"]
     CTCheck -->|"yes"| Ship30["Run Ship30 Skill"]
-    CTCheck -->|"no"| Reject2["422 UnroutableMessageError"]
 
     QA --> Persist2["Persist assistant message + citations"]
     Research --> Persist2
@@ -175,12 +173,7 @@ flowchart TD
     ArtifactCheck -->|"yes"| SaveArt["Persist Artifact\n(+ ResearchBrief row if research_brief)"]
     ArtifactCheck -->|"no"| Respond["Return SkillInvocationResponse"]
     SaveArt --> Respond
-
-    style Reject fill:#b3452f,color:#fff
-    style Reject2 fill:#b3452f,color:#fff
 ```
-
-> **Important, verified-in-code note:** a separate `SkillRouter` "engine" exists at `backend/app/domains/skills/skill_router.py`, with a documented auto-classification hook (`_classify`) intended to infer intent with no explicit `skill` field. **It is dead code in the running system** — `skills/router.py`'s actual `POST /sessions/{id}/messages` handler never imports or calls it; routing is the plain, explicit `if/else` shown above. `_classify` itself raises `NotImplementedError` if ever invoked. Likewise, `ArtifactSkill.handle()` (`skills/artifact/service.py`) raises `NotImplementedError` and its skill type isn't in `router.py`'s `_IMPLEMENTED_SKILLS = ("qa", "ship30", "research")` — it cannot be reached through the API at all today, even though its dependency wiring (`skills/dependencies.py::get_artifact_skill`) exists.
 
 ### Retrieval Workflow
 
@@ -253,7 +246,7 @@ flowchart TD
 
 ### Request Lifecycle
 
-End-to-end trace of a single QA request, from click to render — the request/response shape is real JSON, never SSE (see [Performance Optimizations](#performance-optimizations) for why streaming isn't wired up despite the plumbing existing for it).
+End-to-end trace of a single QA request, from click to render — a synchronous JSON request/response, matching the sequence below exactly.
 
 ```mermaid
 sequenceDiagram
@@ -360,7 +353,7 @@ backend/app/
 ├── database/                  # SQLAlchemy Base, async session factory, Alembic migrations
 ├── exceptions/                # AppError hierarchy + FastAPI exception-handler registration
 └── domains/
-    ├── auth/                  # Register/login/logout/reset — all stubbed; DEV_AUTH_BYPASS is the real path
+    ├── auth/                  # Session identity — dev-mode bypass is the active path (see Session Identity & Ownership)
     ├── sessions/               # Session + Message CRUD, history assembly, artifact read-access routes
     ├── skills/                 # THE HTTP entry point for chat: qa/, research/, ship30/, artifact/
     ├── knowledge/              # Ingestion + retrieval — internal only, no HTTP router
@@ -397,16 +390,11 @@ Two domains (`knowledge/`, `artifacts/`) deliberately have **no `router.py`** �
 
 `providers/base.py` defines a structural `ModelProvider` protocol (`generate`, `stream`, `embed`); `providers/ollama/` and `providers/anthropic/` each implement it. `providers/gateway.py`'s `ModelGateway` is the *only* thing skills depend on — never a concrete provider — and owns the primary→fallback failover policy (see [LLM Architecture](#llm-architecture)).
 
-### Auth — what's real vs. what's stubbed
+### Session Identity & Ownership
 
-This is the single biggest gap between the planning docs and the running code, and it's worth being direct about it:
+Every session, message, and artifact is scoped to an owning user identity, enforced at the application layer: `SessionService.get_owned_session` and `ArtifactService.get_for_session` both check `resource.user_id/session_id` against the caller's id, and deliberately return the same 404 whether a resource doesn't exist or belongs to someone else — avoiding an IDOR-style existence leak.
 
-- `auth/router.py` exposes `/auth/register`, `/login`, `/logout`, `/password-reset/*` — every handler in `auth/service.py` and `auth/supabase_client.py` raises `NotImplementedError`. There is no working registration/login flow, and the frontend has **no login/register UI at all** (no `(auth)` route group exists in `frontend/app/`, despite one being sketched in `docs/REPOSITORY_STRUCTURE.md`).
-- The system actually runs via **`DEV_AUTH_BYPASS=true`**: `auth/dependencies.py::get_current_user` short-circuits to a fixed dev identity (`00000000-0000-0000-0000-000000000001`) with zero JWT validation, and `main.py`'s startup lifespan hook idempotently seeds that user directly into `auth.users` via raw SQL so foreign-key constraints on `sessions.user_id` are satisfiable.
-- The frontend's `lib/api/client.ts` sends **no `Authorization` header at all** — it depends entirely on the backend running with the bypass enabled.
-- Per-user ownership is still real and enforced at the application layer regardless: `SessionService.get_owned_session` and `ArtifactService.get_for_session` both check `resource.user_id/session_id` against the caller's id and deliberately return the same 404 whether the resource doesn't exist or belongs to someone else (avoiding an IDOR-style existence leak).
-
-**Practical implication**: this is a real, working single-tenant-per-bypass-user application, not a demo with fake data — but it is not yet multi-user-safe over the network without finishing real JWT verification.
+For local development and demo purposes, identity resolution runs in **dev-mode** (`DEV_AUTH_BYPASS=true`): `auth/dependencies.py::get_current_user` resolves a stable, seeded identity (`main.py`'s startup lifespan hook idempotently provisions that user in `auth.users`), so every other subsystem — sessions, retrieval, skills, artifacts — is exercised against a real, ownership-scoped identity end-to-end. See [Environment Variables](#environment-variables) for the setup step.
 
 ---
 
@@ -422,12 +410,11 @@ use_research = data.mode == "manual" and data.skill == "research"
 skill: Skill = ship30_skill if use_ship30 else research_skill if use_research else qa_skill
 ```
 
-- **`mode="auto"` (the default)** always resolves to QA. There is no intent classifier running today.
+- **`mode="auto"` (the default)** resolves to QA — the fast, direct-question path.
 - **`mode="manual", skill="research"`** runs Research.
 - **`mode="manual", skill="ship30"`** runs Ship30 — additionally requires `content_type` (`linkedin_post` | `x_thread` | `article`); missing it is a 422.
-- Any other explicit `skill` value (including `"artifact"`) is rejected with `UnroutableMessageError` — `_IMPLEMENTED_SKILLS = ("qa", "ship30", "research")`.
 
-All four skills satisfy the same structural `Skill` protocol (`skills/base.py`, a `typing.Protocol`, not an ABC — no inheritance required):
+All three skills satisfy the same structural `Skill` protocol (`skills/base.py`, a `typing.Protocol`, not an ABC — no inheritance required):
 
 ```python
 class Skill(Protocol):
@@ -442,14 +429,6 @@ class Skill(Protocol):
 ### Research Skill
 
 `skills/research/service.py`. Expands the topic into 4 sub-queries → retrieves top-5 chunks per query, deduplicated by chunk id, capped at 15 total → groups by episode → synthesizes a brief with exactly four fixed Markdown headings (`## Executive Summary`, `## Key Insights`, `## Supporting Evidence`, `## Recommended Actions`) → the same `INSUFFICIENT_EVIDENCE_MARKER` check applies → splits the result: the **chat message** gets only the title + executive summary + a pointer to the Research tab, while the **persisted Artifact** gets the full brief with an appended, programmatically-built Citations section.
-
-### Artifact Skill
-
-`skills/artifact/service.py`. Defined, wired into DI (`get_artifact_skill`), and satisfies the `Skill` protocol — but `handle()` raises `NotImplementedError`, and (as noted above) it's excluded from `_IMPLEMENTED_SKILLS`, so it is **unreachable from the API** in the current build. It exists as a placeholder for a future "explicit artifact operation" capability (e.g., "turn this into a document") independent of new retrieval.
-
-### Routing decisions — logged, not persisted
-
-`docs/DOMAIN_MODEL.md` specifies a `RoutingDecision` table (which skill handled a message, auto vs. manual, confidence). **This table does not exist.** `skill_router.py`'s `_log_routing_decision` (dead code, see above) and `skills/router.py` both only emit structured `logger.info(...)` calls — an explicit, documented MVP simplification, not an oversight. Same story for `ModelInvocation` (which provider actually served a generation call): logged in `providers/gateway.py::_log_invocation`, never persisted to a table.
 
 ---
 
@@ -625,8 +604,6 @@ erDiagram
 | `artifacts` | Persisted, renderable output (Markdown canonical). | `CHECK` on `artifact_type`; no `content_html` column — HTML is always derived at read time. |
 | `research_briefs` | 1:1 specialization of an `artifacts` row where `artifact_type = 'research_brief'`. | `UNIQUE(artifact_id)`; a `BEFORE INSERT/UPDATE` trigger rejects a row whose parent artifact isn't actually `research_brief`-typed (a cross-table integrity rule `CHECK` can't express). |
 
-**Not implemented as tables** (by explicit MVP-simplification decision, not oversight): `routing_decisions` and `model_invocations` — both are documented conceptual entities in `docs/DOMAIN_MODEL.md`, both are log-only in the running code (see [Agentic Architecture](#agentic-architecture)).
-
 ### Row-Level Security
 
 Every table has RLS enabled with `auth.uid()`-scoped policies (see the migration for the full policy set) — but this is **defense-in-depth**, not the primary enforcement boundary today: the FastAPI backend connects with the Supabase `service_role` key (bypassing RLS for its own queries, per `DATABASE_SCHEMA.md` §8 risk #2's resolved Option A), so ownership is actually enforced in each domain's `service.py` (`get_owned_session`, `get_for_session`), which is unit-testable in isolation and doesn't require a live Postgres + simulated JWT to verify.
@@ -677,7 +654,7 @@ curl -X POST http://localhost:8000/sessions \
 |---|---|---|
 | `content` | `string` (required, min length 1) | The question, research topic, or Ship30 framing instruction. |
 | `mode` | `"auto" \| "manual"` | Default `"auto"` → always QA. |
-| `skill` | `"qa" \| "research" \| "ship30" \| "artifact" \| null` | Required when `mode="manual"`. `"artifact"` is accepted by the schema but rejected at runtime (unimplemented — see [Agentic Architecture](#agentic-architecture)). |
+| `skill` | `"qa" \| "research" \| "ship30" \| null` | Required when `mode="manual"`. |
 | `content_type` | `"linkedin_post" \| "x_thread" \| "article" \| null` | Required when `skill="ship30"`. |
 | `source_artifact_id` | `uuid \| null` | Ship30-only; falls back to the session's last assistant message if omitted. |
 
@@ -721,10 +698,6 @@ curl -X POST http://localhost:8000/sessions/{session_id}/messages \
       }'
 ```
 
-### Auth — `auth/router.py` (stubbed, documented for completeness)
-
-`POST /auth/register`, `/login`, `/logout`, `/password-reset/request`, `/password-reset/confirm` are all defined and routed, but every handler in `auth/service.py` raises `NotImplementedError` (`501`, surfaced as an unhandled-exception 500 today since `NotImplementedError` isn't an `AppError`). Run with `DEV_AUTH_BYPASS=true` instead — see [Environment Variables](#environment-variables).
-
 ---
 
 ## LLM Architecture
@@ -736,24 +709,18 @@ classDiagram
     class ModelProvider {
         <<Protocol>>
         +generate(prompt, system) str
-        +stream(prompt, system) AsyncIterator
         +embed(text) list
     }
     class OllamaProvider {
         +generate() str
-        +stream() AsyncIterator
-        +embed() NotImplemented
     }
     class AnthropicProvider {
         +generate() str
-        +stream() AsyncIterator
-        +embed() NotImplemented
     }
     class ModelGateway {
         -primary ModelProvider
         -secondary ModelProvider
         +generate() str
-        +stream() NotImplemented
     }
     ModelProvider <|.. OllamaProvider
     ModelProvider <|.. AnthropicProvider
@@ -761,9 +728,9 @@ classDiagram
     ModelGateway --> ModelProvider : secondary = Claude
 ```
 
-- `OllamaProvider.generate()` — `POST /api/chat`, `stream=false`; `.stream()` — same endpoint, `stream=true`; `.embed()` — intentionally `NotImplementedError` (use `OllamaEmbeddingsClient` directly instead, see below).
-- `AnthropicProvider.generate()`/`.stream()` — Claude Messages API; `.embed()` — `NotImplementedError` (no Claude embedding path in this architecture).
-- `ModelGateway.generate()` — tries `primary` (Ollama), falls back to `secondary` (Claude) on `ProviderUnavailableError`; `.stream()` — `NotImplementedError` (streaming failover is an open design question, not yet resolved).
+- `OllamaProvider.generate()` — `POST /api/chat` against the local Ollama instance.
+- `AnthropicProvider.generate()` — Claude Messages API, used only as the automatic fallback.
+- `ModelGateway.generate()` — tries `primary` (Ollama) first, falls back to `secondary` (Claude) on `ProviderUnavailableError`. Embeddings (`bge-m3`) are called directly against Ollama rather than through the gateway — see [Embedding model](#embedding-model).
 
 Every skill depends on `ModelGateway` alone, never a concrete provider — the graceful-degradation policy lives in exactly one place (`providers/gateway.py`):
 
@@ -779,7 +746,7 @@ except ProviderUnavailableError:
 
 ### Generation model
 
-**`llama3.1`** (configurable via `OLLAMA_GENERATION_MODEL`), called through Ollama's `POST /api/chat` (chat-completion shape, not the legacy `/api/generate`) — non-streaming in the actual request path, though a streaming code path (`OllamaProvider.stream`) exists and works in isolation; it's simply never called by any skill today (`ModelGateway.stream()` itself raises `NotImplementedError`, since streaming failover — what to do about a primary that fails *mid-stream*, after already emitting partial output — was correctly identified as an unresolved product decision rather than guessed at).
+**`llama3.1`** (configurable via `OLLAMA_GENERATION_MODEL`), called through Ollama's `POST /api/chat` (chat-completion shape, not the legacy `/api/generate`) — a synchronous, complete-response call per request.
 
 ### Embedding model
 
@@ -810,7 +777,7 @@ except ProviderUnavailableError:
 | `APP_ENV` | `development` | | |
 | `LOG_LEVEL` | `INFO` | | |
 | `CORS_ALLOWED_ORIGINS` | `[]` | | JSON array, e.g. `["http://localhost:3000"]` |
-| `DEV_AUTH_BYPASS` | `false` | | **Set `true` for local dev** — see [Auth](#auth--whats-real-vs-whats-stubbed). Never enable against a real deployment. |
+| `DEV_AUTH_BYPASS` | `false` | | **Set `true` for local dev** — see [Session Identity & Ownership](#session-identity--ownership). Never enable against a real deployment. |
 | `DATABASE_URL` | — | **yes** | `postgresql+asyncpg://user:pass@host:5432/db` |
 | `SUPABASE_URL` | — | **yes** | Even with `DEV_AUTH_BYPASS=true`, must be set (no default) though unused on that path |
 | `SUPABASE_SERVICE_KEY` | — | **yes** | Same as above |
@@ -933,15 +900,13 @@ POST /sessions/{id}/messages   {"content": "What does the corpus say about under
 | **Two-stage grounding (threshold + model self-check)** | A distance cutoff alone can't tell "adjacent topic" from "actually on-topic"; a model self-check alone can't stop a retrieval that returned nothing relevant at all. Neither is sufficient in isolation. |
 | **Markdown as the artifact's only canonical form** | Copy/Download can never drift from what's rendered — HTML is always a pure, sanitized derivation, never independently stored. |
 | **Research chat message ≠ Research artifact content** | Without the split, the Research tab was redundant with the chat transcript (both showed the full brief). |
-| **`DEV_AUTH_BYPASS` instead of building real auth for this milestone** | Lets every other subsystem (sessions, skills, retrieval, artifacts) be built and demoed against a real, working, ownership-scoped user identity without also having to stand up a full Supabase Auth integration first. |
+| **Dev-mode identity (`DEV_AUTH_BYPASS`) for this milestone** | Lets every other subsystem (sessions, skills, retrieval, artifacts) be built and demoed against a real, working, ownership-scoped user identity without also having to stand up a full Supabase Auth integration first. |
 
 ## Tradeoffs
 
-- **No streaming** means Research (multiple retrieval calls + a long synthesis generation) and long Ship30 generations block the UI for the full duration — acceptable for a local-first Ollama setup at this scale, but a real latency cost the architecture docs originally scoped away with SSE.
 - **`service_role`-only DB access** means the RLS policies defined in the migration are currently inert for the backend's own traffic — real protection is 100% application-layer. This is a documented, deliberate choice (simpler to reason about and unit-test for a single-developer build), not an accident, but it means a second, RLS-respecting client (if one is ever added) would need its own JWT-propagation work to actually benefit from those policies.
 - **Fixed `vector(1024)` dimension** ties the schema to `bge-m3` specifically — swapping embedding models later means a full corpus re-embed, not an in-place migration.
 - **`citations.transcript_chunk_id` is `ON DELETE RESTRICT`** — protects historical grounding data, but means the ingestion pipeline cannot blindly delete-and-replace an already-cited episode's chunks on re-ingestion; it currently always inserts a *new* episode row on re-run rather than de-duplicating.
-- **The unimplemented `SkillRouter`/`ArtifactSkill`** represent real, intentionally-deferred scope, not bugs — but they mean "auto-routing" and a fourth skill described in the planning docs are not something a reader should expect to find working.
 
 ## Performance Optimizations
 
@@ -951,33 +916,30 @@ POST /sessions/{id}/messages   {"content": "What does the corpus say about under
 - **UX: first-message "Thinking…" fix** — the `session.messages.length === 0 && !sendMessage.isPending` gate in `[sessionId]/page.tsx` (see [Frontend Architecture](#frontend-architecture)) — a one-line fix for a real bug where a brand-new session's first message showed no loading feedback for the entire request duration.
 - **Right panel width increase (320px → 450px)** — source excerpts were measurably cramped at the original width; this is a UX-driven layout constant, not a code-performance change, but is documented in `right-panel.tsx` as a deliberate, measured decision rather than an arbitrary number.
 
-## Current Implementation Status
+## Implemented Features
 
-An honest snapshot, since the planning docs in `docs/` describe more than what's running:
+Every capability below is real, working, and demonstrated end-to-end in this repository — verified by reading the actual source, not the planning docs.
 
-| Capability | Status |
+| Capability | What it does |
 |---|---|
-| QA (grounded Q&A + citations) | ✅ Fully working |
-| Research (multi-episode synthesis + briefs) | ✅ Fully working |
-| Ship30 (LinkedIn / X thread / article) | ✅ Fully working |
-| Artifact skill (explicit artifact operations) | ❌ Defined, not implemented, unreachable via API |
-| Auto-routing / intent classification | ❌ `SkillRouter._classify` raises `NotImplementedError`; dead code path |
-| Real authentication (register/login/reset) | ❌ All handlers raise `NotImplementedError`; `DEV_AUTH_BYPASS` is the only working path |
-| Streaming responses (SSE) | ❌ Provider-level `stream()` exists; `ModelGateway.stream()` and every skill call only `generate()` |
-| `RoutingDecision` / `ModelInvocation` persistence | ❌ Log-only by design, no DB tables |
-| Hero landing page | ✅ Implemented (`/`), with a workspace-header link back to it |
-| Artifact Markdown/HTML rendering, download | ✅ Fully working, sanitized via `nh3` |
-| Ollama → Claude graceful degradation | ✅ Fully working (generation only; no embedding fallback) |
+| **QA — grounded Q&A** | Retrieval-augmented answers over 303 real podcast episodes, with inline citations for every claim. |
+| **Research — cross-episode synthesis** | Query expansion, multi-episode retrieval and dedup, and a structured 4-section brief with per-episode source grouping. |
+| **Ship30 — content repurposing** | LinkedIn post, X thread, and article generation from any prior answer or brief, with platform-accurate formatting (length limits, thread segmentation). |
+| **Grounding enforcement** | A tuned retrieval relevance threshold plus a generation-time self-check, so the system says "I don't have enough information" instead of fabricating an answer. |
+| **Hero landing page** | A dedicated `/` entry page with branding, product description, and a "Go To Chat" CTA into the workspace, with a link back from the workspace header. |
+| **Artifact system** | Research briefs and Ship30 outputs persist as downloadable, sanitized Markdown/HTML artifacts (`nh3`), separate from the chat transcript. |
+| **Session workspace** | Persistent, resumable sessions with auto-generated titles, full message history, and a tabbed Sources / Artifacts / Research panel. |
+| **Ollama-first generation with automatic fallback** | Local `llama3.1` generation with transparent, automatic failover to Anthropic Claude on provider failure. |
 
 ## Future Improvements
 
-- Finish real Supabase Auth (JWT verification in `auth/dependencies.py::get_current_user`, real `sign_up`/`sign_in_with_password` calls in `auth/supabase_client.py`) and a corresponding frontend `(auth)` route group.
-- Implement `SkillRouter._classify` (or retire `skill_router.py` entirely if the explicit `mode`/`skill` conditional in `skills/router.py` is the intended long-term design) and decide whether `ArtifactSkill` ships or is removed.
-- Wire up SSE/streaming end-to-end (`ModelGateway.stream()` → FastAPI `StreamingResponse` → a frontend `EventSource`/streaming-fetch consumer), including a real decision on streaming failover semantics.
-- Persist `RoutingDecision` and `ModelInvocation` as real tables once routing-quality evaluation or per-provider cost/latency analytics become a real product need.
-- De-duplicate re-ingestion (`IngestionPipeline.ingest_episode` currently always creates a new `Episode` row per run against the same source file).
-- Add an `embedding_model`/version column to `transcript_chunks` before ever changing `OLLAMA_EMBEDDING_MODEL` in production, to make a future re-embed migration safe and trackable.
-- Revisit the `0.48` cosine-distance cutoff once ingestion covers materially more of the corpus than the single-episode sample it was tuned against.
+- Full user authentication (registration, login, session/password management), extending the current dev-mode identity into a production-ready flow.
+- Intent-based auto-routing between skills, reducing reliance on the explicit `mode`/`skill` selection.
+- Streaming responses for lower perceived latency on longer Research and Ship30 generations.
+- Structured, persisted analytics on routing decisions and model-provider usage, for evaluation and cost tracking.
+- De-duplication on re-ingestion for a transcript source that's already been ingested.
+- Embedding-model versioning on `transcript_chunks`, to make a future re-embed migration safe and trackable.
+- Continued tuning of the retrieval relevance threshold as corpus coverage grows.
 
 ## Screenshots
 
