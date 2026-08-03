@@ -515,7 +515,89 @@ All three share one system prompt (`SHIP30_SYSTEM_PROMPT`) instructing the model
 
 ### Entity-Relationship Diagram
 
-![Database ER Diagram](docs/images/database-er-diagram.png)
+```mermaid
+erDiagram
+    AUTH_USERS ||--o| PROFILES : extends
+    AUTH_USERS ||--o{ SESSIONS : owns
+    SESSIONS ||--o{ MESSAGES : contains
+    SESSIONS ||--o{ ARTIFACTS : has
+    MESSAGES ||--o{ ARTIFACTS : produces
+    MESSAGES ||--o{ CITATIONS : cites
+    CITATIONS }o--|| TRANSCRIPT_CHUNKS : references
+    TRANSCRIPT_CHUNKS }o--|| EPISODES : belongs_to
+    ARTIFACTS ||--o| RESEARCH_BRIEFS : specializes
+
+    AUTH_USERS {
+        uuid id
+        text email
+    }
+
+    PROFILES {
+        uuid id
+        text display_name
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    SESSIONS {
+        uuid id
+        uuid user_id
+        text title
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    MESSAGES {
+        uuid id
+        uuid session_id
+        text role
+        text content
+        text skill_used
+        timestamptz created_at
+    }
+
+    EPISODES {
+        uuid id
+        text title
+        text guest_name
+        date published_at
+        text source_url
+    }
+
+    TRANSCRIPT_CHUNKS {
+        uuid id
+        uuid episode_id
+        text content
+        text embedding
+        int start_offset
+        int end_offset
+        int start_timestamp_seconds
+        int end_timestamp_seconds
+    }
+
+    CITATIONS {
+        uuid id
+        uuid message_id
+        uuid transcript_chunk_id
+        text display_label
+    }
+
+    ARTIFACTS {
+        uuid id
+        uuid session_id
+        uuid message_id
+        text artifact_type
+        text content_markdown
+        timestamptz created_at
+    }
+
+    RESEARCH_BRIEFS {
+        uuid id
+        uuid artifact_id
+        text topic
+        text summary
+    }
+```
 
 ### Table reference
 
