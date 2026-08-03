@@ -951,13 +951,14 @@ Every capability below is real, working, and demonstrated end-to-end in this rep
 
 ## Screenshots
 
-> Screenshots pending — add captures under `docs/screenshots/` and reference them here, e.g.:
+| | |
+|---|---|
+| ![Hero landing page](docs/screenshots/hero-landing-page.png) | ![Workspace — QA with citations](docs/screenshots/workspace-qa-citations.png) |
+| *Hero landing page* | *Grounded Q&A with Sources panel open* |
 
 | | |
 |---|---|
-| ![Hero landing page](docs/screenshots/hero.png) | ![Workspace — QA with citations](docs/screenshots/qa.png) |
-| *Hero landing page* | *Grounded Q&A with the Sources panel open* |
-| ![Research brief](docs/screenshots/research.png) | ![Ship30 generation](docs/screenshots/ship30.png) |
+| ![Research brief](docs/screenshots/research-brief.png) | ![Ship30 generation](docs/screenshots/ship30-generation.png) |
 | *Synthesized multi-episode research brief* | *Repurposing a brief into a LinkedIn post* |
 
 ## Agent Transcripts
