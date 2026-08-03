@@ -97,18 +97,15 @@ Every one of these three skills refuses to fabricate: both QA and Research indep
 5. **Repurpose with Ship30** — open any artifact (a research brief or a prior Ship30 output) in the **Artifacts** tab, scroll to "Repurpose this with Ship30," optionally edit the framing instruction, and click **LinkedIn post**, **X thread**, or **Article**. The new piece appears both as a new artifact (downloadable as `.md`) and as a new assistant chat turn.
 6. **Return home** — the workspace header logo is a clickable link back to the Hero Landing Page.
 
-## Demo Video
+## 🎥 Demo Video
 
-A complete walkthrough of the Lenny Growth Assistant, including:
+<p align="center">
+  <a href="https://youtu.be/8DJcviVh0E">
+    <img src="https://img.youtube.com/vi/8DJcviVh0E/maxresdefault.jpg" alt="Lenny Growth Assistant Demo" width="800">
+  </a>
+</p>
 
-- Hero landing page
-- Grounded Q&A with citations
-- Research brief generation
-- Sources panel
-- Artifact management
-- Ship30 content generation
-
-🎥 Watch the demo: https://youtu.be/8DlJcviVh0E
+Watch the full walkthrough covering grounded Q&A, research synthesis, citations, artifacts, and Ship30 content generation.
 
 ## System Architecture
 
