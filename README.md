@@ -951,16 +951,27 @@ Every capability below is real, working, and demonstrated end-to-end in this rep
 
 ## Screenshots
 
-| | |
-|---|---|
-| ![Hero landing page](docs/screenshots/hero-landing-page.png) | ![Workspace — QA with citations](docs/screenshots/workspace-qa-citations.png) |
-| *Hero landing page* | *Grounded Q&A with Sources panel open* |
+## Screenshots
 
 | | |
 |---|---|
-| ![Research brief](docs/screenshots/research-brief.png) | ![Ship30 generation](docs/screenshots/ship30-generation.png) |
-| *Synthesized multi-episode research brief* | *Repurposing a brief into a LinkedIn post* |
+| ![Hero Landing Page](docs/screenshots/Hero%20Landing%20Page.jpeg) | ![Chat](docs/screenshots/Chat.jpeg) |
+| *Hero landing page and workspace entry point* | *Interactive chat workspace* |
 
+| | |
+|---|---|
+| ![QA](docs/screenshots/QA.jpeg) | ![Research](docs/screenshots/Research.jpeg) |
+| *Grounded Q&A with citations and sources* | *Generated research brief* |
+
+| | |
+|---|---|
+| ![Research Tab](docs/screenshots/Research%20Tab.jpeg) | ![Research Tab Expanded](docs/screenshots/Research%20Tab%20Expanded.jpeg) |
+| *Research artifacts tab* | *Expanded research brief view* |
+
+| | |
+|---|---|
+| ![Artifacts](docs/screenshots/Artifacts.jpeg) |
+| *Generated content artifacts and outputs* |
 ## Agent Transcripts
 
 `transcripts/` is the **knowledge corpus itself** — not a log of AI-agent conversations. It is the raw source material the ingestion pipeline (`knowledge/ingestion/`) reads and embeds:
