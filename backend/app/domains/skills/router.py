@@ -139,13 +139,21 @@ async def post_message(
 
     # 7. Persist the artifact (if any), the ResearchBrief specialization
     #    row (research only), and citations (if any).
+    #
+    # `artifact_content_markdown or content_markdown`: Research sets
+    # `artifact_content_markdown` to the full brief while `content_markdown`
+    # is the short chat-facing summary (UX redesign, Option B) — the
+    # Artifact must persist the full brief, not the chat text. Every other
+    # skill leaves `artifact_content_markdown` unset (`None`), so this
+    # falls back to `content_markdown` exactly as before — unchanged
+    # behavior for qa/ship30/artifact.
     artifact_id = None
     if result.artifact_type is not None:
         artifact = await artifact_service.create(
             session_id=session.id,
             message_id=assistant_message.id,
             artifact_type=result.artifact_type,
-            content_markdown=result.content_markdown,
+            content_markdown=result.artifact_content_markdown or result.content_markdown,
         )
         artifact_id = artifact.id
 

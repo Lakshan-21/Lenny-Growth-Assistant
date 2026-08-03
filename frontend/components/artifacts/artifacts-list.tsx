@@ -12,12 +12,23 @@ import type { Artifact, ArtifactType } from "@/types/domain";
 
 interface ArtifactsListProps {
   sessionId: string;
+  /** Show only this artifact type — used by the Research tab (`"research_brief"`). */
   filterType?: ArtifactType;
+  /** Show every type *except* this one — used by the Artifacts tab
+   * (`"research_brief"`), so research briefs stay exclusive to the
+   * Research tab instead of also appearing here. Deliberately an
+   * exclusion rather than an allowlist of ship30 types: any future
+   * artifact type (e.g. the currently-unused `"qa_answer"`) is a
+   * "generated output" that belongs in Artifacts by default, without
+   * needing this list updated for it.
+   */
+  excludeType?: ArtifactType;
   emptyTitle: string;
   emptyDescription: string;
   /** One-line framing shown above the list — lets a first-time user tell
-   * this tab apart from its sibling at a glance, since both currently read
-   * the exact same underlying data (see each tab's wrapper component). */
+   * this tab apart from its sibling at a glance, since both read from the
+   * same underlying data source (see each tab's wrapper component) even
+   * though `filterType`/`excludeType` now make their contents disjoint. */
   headerNote?: string;
   emptyIcon?: LucideIcon;
   /** Row presentation override. Defaults to the generic `ArtifactListItem`
@@ -28,15 +39,16 @@ interface ArtifactsListProps {
 
 /**
  * Shared fetch/sort/select/open state machine for the Artifacts and
- * Research tabs — Research is just this same underlying data, filtered to
- * `artifact_type === "research_brief"`, so the two tabs share this
- * machinery rather than duplicating it. `renderItem`/`emptyIcon`/
- * `headerNote` are what let the two tabs *look* different despite sharing
- * a data source and fetch/select logic.
+ * Research tabs — both read the same underlying `GET /sessions/{id}
+ * /artifacts` data, so they share this machinery rather than duplicating
+ * it. `filterType`/`excludeType` make the two tabs' *contents* disjoint
+ * (Research: only `research_brief`; Artifacts: everything else), and
+ * `renderItem`/`emptyIcon`/`headerNote` make them *look* different too.
  */
 export function ArtifactsList({
   sessionId,
   filterType,
+  excludeType,
   emptyTitle,
   emptyDescription,
   headerNote,
@@ -46,7 +58,11 @@ export function ArtifactsList({
   const { data: artifacts, isLoading, isError } = useArtifacts(sessionId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const filtered = (artifacts ?? []).filter((artifact) => !filterType || artifact.artifact_type === filterType);
+  const filtered = (artifacts ?? []).filter(
+    (artifact) =>
+      (!filterType || artifact.artifact_type === filterType) &&
+      (!excludeType || artifact.artifact_type !== excludeType),
+  );
   const sorted = [...filtered].sort((a, b) => b.created_at.localeCompare(a.created_at));
   const selected: Artifact | undefined = sorted.find((artifact) => artifact.id === selectedId);
 

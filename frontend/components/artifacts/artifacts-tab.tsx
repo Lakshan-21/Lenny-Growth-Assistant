@@ -8,9 +8,10 @@ export function ArtifactsTab({ sessionId }: ArtifactsTabProps) {
   return (
     <ArtifactsList
       sessionId={sessionId}
+      excludeType="research_brief"
       emptyTitle="No artifacts yet."
-      emptyDescription="Research briefs and Ship30 posts you generate will show up here."
-      headerNote="Deliverables from this session — open any to read, download, or repurpose it."
+      emptyDescription="Ship30 posts (LinkedIn, X threads, articles) you generate will show up here."
+      headerNote="Generated deliverables from this session — open any to read, download, or repurpose it."
     />
   );
 }

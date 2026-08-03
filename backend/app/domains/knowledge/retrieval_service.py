@@ -2,11 +2,14 @@
 in-process by the QA and Research skills only (no HTTP endpoint in MVP).
 """
 
+import logging
 import uuid
 
 from app.domains.knowledge.embeddings.embedding_service import EmbeddingService
 from app.domains.knowledge.repository import KnowledgeRepository
 from app.domains.knowledge.schemas import TranscriptChunkRead
+
+logger = logging.getLogger(__name__)
 
 
 class RetrievalService:
@@ -29,6 +32,12 @@ class RetrievalService:
         outcome for the caller (`skills/qa/service.py`) to handle
         explicitly, not an error condition at the retrieval layer.
         """
+
+        # TEMPORARY DIAGNOSTIC LOGGING (retrieval-pipeline investigation,
+        # personal-branding-returns-unrelated-chunks issue) — logs the query
+        # side; per-chunk scores/metadata are logged in
+        # `repository.py::similarity_search`. Remove both once root-caused.
+        logger.info("RETRIEVAL_DEBUG query=%r top_k=%d episode_ids=%s", query_text, top_k, episode_ids)
 
         query_embedding = await self._embedding_service.embed_text(query_text)
         chunks = await self._repository.similarity_search(

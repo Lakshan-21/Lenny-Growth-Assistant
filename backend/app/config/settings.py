@@ -58,6 +58,20 @@ class Settings(BaseSettings):
     OLLAMA_GENERATION_MODEL: str = Field(default="llama3.1")
     OLLAMA_EMBEDDING_MODEL: str = Field(default="bge-m3")
     OLLAMA_REQUEST_TIMEOUT_SECONDS: float = Field(default=30.0)
+    # Ollama configuration review: on GPUs too small to hold both the
+    # generation and embedding models resident at once (e.g. a 4GB card
+    # with an 8B generation model), every switch between them evicts
+    # whichever model isn't currently needed, forcing a full reload on the
+    # next call of either -- confirmed empirically (~2.5s warm vs ~14s
+    # reload for bge-m3; ~3.3s warm vs ~22s reload for llama3.1). Since QA
+    # and Research always call embed-then-generate in the same request,
+    # this thrashes on every single request. Forcing the small embedding
+    # model (bge-m3, 566M) onto CPU via Ollama's `options.num_gpu=0`
+    # request parameter leaves the GPU exclusively for the generation
+    # model, which is what actually needs it. Defaults to true (the
+    # recommended posture); set false to let Ollama place embeddings on
+    # GPU as before (e.g. on hardware with enough VRAM for both models).
+    OLLAMA_EMBEDDING_FORCE_CPU: bool = Field(default=True)
 
     # --- Knowledge: transcript ingestion ----------------------------------
     # Directory scanned by knowledge/ingestion/cli.py for transcript JSON

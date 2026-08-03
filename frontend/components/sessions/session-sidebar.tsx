@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { NewSessionButton } from "@/components/sessions/new-session-button";
@@ -16,7 +18,24 @@ export function SessionSidebar() {
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-background-sidebar">
       <div className="flex items-center gap-2 px-4 py-4">
-        <div className="size-6 shrink-0 rounded-sm bg-accent" aria-hidden="true" />
+        {/* `public/logo.png` (copied from Assets/Logo 1.PNG, unchanged
+            pixels — 1254x1254 source) replaces the previous plain colored
+            div placeholder. `next/image` needs no extra config for local
+            `public/` assets. width/height match the `size-7` CSS box
+            exactly (both square, so the aspect ratio can't distort), and
+            `object-contain` is a second guard against any future
+            container-size change stretching it. Wrapped in a `Link` back
+            to `/` (the Hero Landing Page) per the workspace header update
+            — the rest of the header's functionality is untouched. */}
+        <Link href="/" className="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background-sidebar">
+          <Image
+            src="/logo.png"
+            alt="Back to Lenny Growth Assistant home"
+            width={28}
+            height={28}
+            className="size-7 shrink-0 rounded-sm object-contain"
+          />
+        </Link>
         <span className="truncate text-sm font-semibold">Lenny Growth Workspace</span>
       </div>
 

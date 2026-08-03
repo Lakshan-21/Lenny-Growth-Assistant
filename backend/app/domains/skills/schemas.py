@@ -16,6 +16,18 @@ from app.domains.sessions.schemas import MessageRead
 SkillType = Literal["qa", "research", "ship30", "artifact"]
 RoutingMode = Literal["auto", "manual"]
 
+# Shared exact-match escape hatch for "the retrieved excerpts don't
+# substantively address what was asked" — a generation prompt (QA's or
+# Research's) can return this instead of a real answer/brief, checked
+# verbatim by the owning skill's service layer (qa/service.py,
+# research/service.py) to enforce insufficient-grounding behavior
+# identically across both skills rather than each reimplementing it.
+# Deliberately an unnatural, single-token sentinel (not a natural-language
+# sentence) so a plain substring check against a real completion can never
+# false-positive: no genuine answer or research brief would ever contain
+# this literal string.
+INSUFFICIENT_EVIDENCE_MARKER = "INSUFFICIENT_EVIDENCE"
+
 
 @dataclass(frozen=True, slots=True)
 class ConversationTurn:
@@ -68,6 +80,17 @@ class SkillResult:
     # attached to the producing message. artifact_type must match one of
     # DATABASE_SCHEMA.md's artifacts.artifact_type CHECK values.
     artifact_type: str | None = None
+    # Research UX redesign (chat shows title + executive summary + a
+    # pointer to the Research tab; the Research tab shows the full brief):
+    # when set, this is what the router persists as the *Artifact's*
+    # content instead of `content_markdown` -- `content_markdown` becomes
+    # purely the chat-facing text in that case. Defaults to `None`, meaning
+    # "same content for both" (today's behavior for every other skill) --
+    # only `research/service.py` sets this; qa/ship30/artifact are
+    # unaffected and keep persisting `content_markdown` for both the
+    # message and the artifact, exactly as before. See skills/router.py's
+    # `artifact_content_markdown or content_markdown` fallback.
+    artifact_content_markdown: str | None = None
     # Research-only (ignored by qa/ship30/artifact): set together whenever
     # artifact_type == "research_brief", so the router can also persist the
     # ResearchBrief specialization row (DOMAIN_MODEL.md §4.9) alongside the

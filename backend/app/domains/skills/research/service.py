@@ -9,6 +9,7 @@ from app.domains.knowledge.schemas import TranscriptChunkRead
 from app.domains.providers.gateway import ModelGateway
 from app.domains.skills.qa.citation_builder import CitationBuilder
 from app.domains.skills.research.prompts import (
+    INSUFFICIENT_EVIDENCE_MARKER,
     QUERY_EXPANSION_SYSTEM_PROMPT,
     RESEARCH_SYSTEM_PROMPT,
     build_query_expansion_prompt,
@@ -22,11 +23,14 @@ from app.domains.skills.schemas import CitationRef, SkillContext, SkillResult
 _NUM_SUBQUERIES = 4
 _TOP_K_PER_QUERY = 5
 _MAX_TOTAL_CHUNKS = 15
-_NO_GROUNDING_MESSAGE = (
-    "I don't have enough information in the ingested Lenny's Podcast "
-    "transcripts to research that topic confidently. Try a narrower or "
-    "differently-phrased question, or ask about a topic covered in an "
-    "episode that's been ingested."
+# Used for both "retrieval returned nothing at all" and "retrieval returned
+# chunks, but the model itself judged them topically insufficient" (see
+# `INSUFFICIENT_EVIDENCE_MARKER` check in `handle()` below) — from the
+# user's perspective both are the same outcome, so they share one exact,
+# specified message rather than two subtly different ones.
+_INSUFFICIENT_EVIDENCE_MESSAGE = (
+    "The available sources do not contain sufficient information to "
+    "create a research brief on this topic."
 )
 
 
@@ -61,8 +65,14 @@ class ResearchSkill:
         if not all_chunks:
             # Same explicit "no grounding" pattern as qa/service.py — say
             # so rather than fabricate a brief (PRD §6.3/§6.4 acceptance
-            # criteria apply equally here).
-            return SkillResult(skill="research", content_markdown=_NO_GROUNDING_MESSAGE, citations=[])
+            # criteria apply equally here). This only catches a fully empty
+            # retrieval result (e.g. an empty corpus) — vector similarity
+            # search always returns *some* nearest neighbors when the
+            # corpus is non-empty, even if none of them are actually on
+            # topic, so a populated-but-irrelevant `all_chunks` still
+            # reaches the model below; that case is caught after
+            # generation instead (see `INSUFFICIENT_EVIDENCE_MARKER` check).
+            return SkillResult(skill="research", content_markdown=_INSUFFICIENT_EVIDENCE_MESSAGE, citations=[])
 
         # 4. Build a synthesis prompt (excerpts grouped by episode).
         chunks_by_episode = self._group_by_episode(all_chunks)
@@ -70,19 +80,44 @@ class ResearchSkill:
 
         # 5. Generate the structured research brief.
         raw_completion = await self._model_gateway.generate(prompt=prompt, system=RESEARCH_SYSTEM_PROMPT)
+
+        # The model itself is the only thing that can judge whether the
+        # retrieved excerpts substantively address the *requested* topic
+        # (retrieval has no relevance/similarity threshold of its own — see
+        # above) — `RESEARCH_SYSTEM_PROMPT`/`build_research_prompt` instruct
+        # it to emit this exact marker instead of a brief when they don't.
+        # Enforced here, not left to the model's discretion alone: this is
+        # the one point where an off-topic completion (e.g. a "Career
+        # Development" brief synthesized from personal-branding-adjacent
+        # excerpts) gets caught before it's structured, cited, and
+        # persisted as a real Artifact.
+        if INSUFFICIENT_EVIDENCE_MARKER in raw_completion:
+            return SkillResult(skill="research", content_markdown=_INSUFFICIENT_EVIDENCE_MESSAGE, citations=[])
+
         draft = self._synthesizer.structure(topic=topic, raw_completion=raw_completion, retrieved_chunks=all_chunks)
 
         # Citations are built from the retrieved chunks themselves — never
         # parsed out of the model's free text (DOMAIN_MODEL.md §4.8
         # invariant) — same rule QA follows, reusing the same builder.
         citations = self._citation_builder.build(retrieved_chunks=all_chunks)
-        content_markdown = self._render_brief_markdown(draft=draft, citations=citations)
+
+        # UX redesign (Option B): the chat message gets title + executive
+        # summary + a pointer to the Research tab, never the full brief —
+        # the full multi-section brief (with citations) is reserved for
+        # the persisted Artifact only, via `artifact_content_markdown`
+        # (skills/schemas.py). Without this split, the entire brief was
+        # duplicated verbatim into the chat conversation, making the
+        # Research tab feel redundant since users had already read
+        # everything in chat.
+        full_brief_markdown = self._render_brief_markdown(draft=draft, citations=citations)
+        chat_summary_markdown = self._render_chat_summary_markdown(draft=draft)
 
         return SkillResult(
             skill="research",
-            content_markdown=content_markdown,
+            content_markdown=chat_summary_markdown,
             citations=citations,
             artifact_type="research_brief",
+            artifact_content_markdown=full_brief_markdown,
             research_topic=draft.topic,
             research_summary=draft.summary,
         )
@@ -127,6 +162,21 @@ class ResearchSkill:
             citation_lines = "\n".join(f"{index}. {c.display_label}" for index, c in enumerate(citations, start=1))
             parts.append(f"## Citations\n\n{citation_lines}")
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _render_chat_summary_markdown(*, draft: ResearchBriefDraft) -> str:
+        """Chat-facing content only (UX redesign, Option B): title +
+        executive summary, plus a call-to-action pointing at the Research
+        tab — deliberately *not* the Key Insights/Supporting Evidence/
+        Recommended Actions sections or the citations list, which live
+        exclusively in the Artifact (`_render_brief_markdown`, used for
+        `artifact_content_markdown` instead of this)."""
+
+        return (
+            f"# {draft.topic}\n\n"
+            f"{draft.summary}\n\n"
+            f"_Full brief with sources and detailed findings available in the Research tab._"
+        )
 
 
 def _dedupe_queries(queries: list[str]) -> list[str]:

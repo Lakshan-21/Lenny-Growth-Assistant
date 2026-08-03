@@ -14,7 +14,12 @@ export function RightPanel() {
   const sessionId = params?.sessionId ?? null;
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-background-sidebar">
+    // w-[450px] (up from w-80/320px): source excerpts were cramped at 320px
+    // — see citations/citation-card.tsx. `shrink-0` (unchanged) keeps this
+    // pane's width fixed while `main` (app/(workspace)/layout.tsx,
+    // `min-w-0 flex-1`) absorbs whatever space remains, same responsive
+    // mechanics as before, just against a larger fixed number.
+    <aside className="flex w-[450px] shrink-0 flex-col border-l border-border bg-background-sidebar">
       <Tabs
         value={activeTab}
         onValueChange={(value: string) => setActiveTab(value as RightPanelTab)}

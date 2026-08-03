@@ -72,7 +72,16 @@ export default function SessionChatPage() {
         <h1 className="truncate text-sm font-semibold">{session.title}</h1>
       </header>
 
-      {session.messages.length === 0 ? (
+      {/* `&& !sendMessage.isPending`: without it, submitting the very
+          first message in a session leaves `session.messages` at `[]`
+          (the local session query hasn't refetched yet — that only
+          happens in `useSendMessage`'s `onSuccess`), so this branch kept
+          rendering `EmptyState` for the whole request -- `MessageList`,
+          the only place `ThinkingIndicator` lives, never mounted, so the
+          thinking state had nowhere to appear until the response arrived
+          and immediately cleared it. From the second message onward this
+          never mattered, since `messages.length` was already > 0. */}
+      {session.messages.length === 0 && !sendMessage.isPending ? (
         <EmptyState
           title="Ask about Lenny's Podcast"
           description="Ask a question and get a grounded answer with citations from real episodes."

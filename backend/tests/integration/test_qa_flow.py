@@ -10,6 +10,7 @@ from app.domains.sessions.dependencies import get_session_repository
 from app.domains.sessions.repository import SessionRepository
 from app.domains.skills.dependencies import get_qa_skill
 from app.domains.skills.qa.citation_builder import CitationBuilder
+from app.domains.skills.qa.prompts import INSUFFICIENT_EVIDENCE_MARKER
 from app.domains.skills.qa.service import QASkill
 from app.main import app
 from tests.conftest import FakeAsyncSession
@@ -146,3 +147,51 @@ def test_qa_no_grounding_returns_explicit_message_not_error(client, current_user
     assert response.status_code == 201
     assert response.json()["citations"] == []
     assert "don't have enough information" in response.json()["message"]["content"]
+
+
+class _WeaklyGroundedModelGateway:
+    """Retrieval returned *something* (unlike `_EmptyRetrievalService`
+    above) — non-empty, but not actually sufficient to answer the
+    question. Per the new `QA_SYSTEM_PROMPT`/`build_qa_prompt` contract, a
+    well-behaved model responds with the insufficient-evidence marker
+    instead of stretching a partial/adjacent excerpt into a confident
+    answer (the same enforcement `research/service.py` already has)."""
+
+    async def generate(self, *, prompt, system=None):
+        assert EXCERPT in prompt, "the retrieved excerpt must still reach the prompt"
+        return INSUFFICIENT_EVIDENCE_MARKER
+
+
+def test_qa_insufficient_grounding_returns_explicit_message_and_no_citations(client, current_user):
+    """Guards the exact gap this was built to close: retrieval returns a
+    non-empty, passes-the-similarity-threshold chunk that still doesn't
+    substantively answer the question -- the response must be the
+    standard no-grounding message with zero citations, not a confidently-
+    worded answer with citations implying stronger grounding than
+    actually exists."""
+
+    shared_db = FakeAsyncSession()
+    _wire_common(shared_db)
+    app.dependency_overrides[get_qa_skill] = lambda: QASkill(
+        retrieval_service=_FakeRetrievalService(),  # returns a real (non-empty) chunk
+        model_gateway=_WeaklyGroundedModelGateway(),
+        citation_builder=CitationBuilder(),
+    )
+
+    session_id = client.post("/sessions", json={"title": None}).json()["id"]
+    response = client.post(f"/sessions/{session_id}/messages", json={"content": "What is personal branding?"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["citations"] == []
+    assert "don't have enough information" in body["message"]["content"]
+
+    # Same guarantee reflected in the nested `message.citations` field
+    # (what `GET /sessions/{id}` would later show for this historical message).
+    assert body["message"]["citations"] == []
+
+    # No `Citation` row was ever persisted for this message.
+    from app.domains.knowledge.models import Citation
+
+    persisted_citations = [o for o in shared_db.store.values() if isinstance(o, Citation)]
+    assert persisted_citations == []

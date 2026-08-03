@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { HeroLanding } from "@/components/marketing/hero-landing";
 
 export default function RootPage() {
-  redirect("/sessions");
+  return <HeroLanding />;
 }
