@@ -99,7 +99,7 @@ Every one of these three skills refuses to fabricate: both QA and Research indep
 
 ## 🎥 Demo Video
 
-[![Lenny Growth Assistant Demo](docs/screenshots/demo-video-thumbnail.png)](https://youtu.be/8DJcviVh0E)
+[![Lenny Growth Assistant Demo](docs/screenshots/demo-video-thumbnail.png)](https://youtu.be/8DlJcviVh0E)
 
 Watch the full walkthrough covering grounded Q&A, research synthesis, citations, artifacts, and Ship30 content generation.
 
