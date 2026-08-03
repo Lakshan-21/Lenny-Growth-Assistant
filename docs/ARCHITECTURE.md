@@ -436,42 +436,42 @@ Schema is defined in one consolidated Alembic migration, `backend/app/database/m
 
 ```mermaid
 erDiagram
-    AUTH_USERS ||--o| PROFILES : "extends"
+    AUTH_USERS ||--o| PROFILES : extends
     AUTH_USERS ||--o{ SESSIONS : owns
     SESSIONS ||--o{ MESSAGES : contains
-    SESSIONS ||--o{ ARTIFACTS : "has attached"
+    SESSIONS ||--o{ ARTIFACTS : has_attached
     MESSAGES ||--o{ ARTIFACTS : produces
     MESSAGES ||--o{ CITATIONS : cites
     CITATIONS }o--|| TRANSCRIPT_CHUNKS : references
-    TRANSCRIPT_CHUNKS }o--|| EPISODES : "belongs to"
-    ARTIFACTS ||--o| RESEARCH_BRIEFS : "specializes (1:1)"
+    TRANSCRIPT_CHUNKS }o--|| EPISODES : belongs_to
+    ARTIFACTS ||--o| RESEARCH_BRIEFS : specializes
 
     SESSIONS {
         uuid id PK
         uuid user_id FK
         text title
         timestamptz created_at
-        timestamptz updated_at "bumped by trigger on new message"
+        timestamptz updated_at
     }
     MESSAGES {
         uuid id PK
         uuid session_id FK
-        text role "user | assistant | system"
+        text role
         text content
-        text skill_used "qa|research|ship30|artifact, nullable"
+        text skill_used
         timestamptz created_at
     }
     ARTIFACTS {
         uuid id PK
         uuid session_id FK
         uuid message_id FK
-        text artifact_type "qa_answer|research_brief|linkedin_post|x_thread|article"
-        text content_markdown "canonical, no content_html column"
+        text artifact_type
+        text content_markdown
         timestamptz created_at
     }
     RESEARCH_BRIEFS {
         uuid id PK
-        uuid artifact_id FK_UK "1:1 via UNIQUE"
+        uuid artifact_id FK
         text topic
         text summary
     }
@@ -479,7 +479,7 @@ erDiagram
         uuid id PK
         uuid episode_id FK
         text content
-        vector_1024 embedding "HNSW cosine index"
+        vector embedding
         int start_offset
         int end_offset
         int start_timestamp_seconds
@@ -488,7 +488,7 @@ erDiagram
     CITATIONS {
         uuid id PK
         uuid message_id FK
-        uuid transcript_chunk_id FK "ON DELETE RESTRICT"
+        uuid transcript_chunk_id FK
         text display_label
     }
     EPISODES {
